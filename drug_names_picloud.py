@@ -68,4 +68,4 @@ for i in range(0, N_NAMES, STEP_SIZE):
     ALL_RESULTS.extend(results)
 
 
-save_results('all_results.txt', NAMES, ALL_RESULTS)
+save_results('results_final.txt', NAMES, ALL_RESULTS)
