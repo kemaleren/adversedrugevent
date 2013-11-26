@@ -9,8 +9,13 @@ import cloud
 from drug_names import map_drug_name
 
 
+# map this many at a time
 CHUNK_SIZE = 10
-STEP_SIZE = 10000
+
+# picloud has a limit on the number of items that can be mapped
+STEP_SIZE = 1000
+
+# save all results as they come
 ALL_RESULTS = []
 
 
@@ -34,6 +39,16 @@ def function_dechunker(func):
     return wrapper_inner
 
 
+def save_results(filename, names, results):
+    with open(filename, 'w') as f:
+        f.write("name	cuid	ingred_cuid	ingred\n")
+        for n, m in zip(names, results):
+            cuid, ingred_cuid, ingred = m
+            line = map(str, [n, cuid, ingred_cuid, ingred])
+            f.write("	".join(line))
+            f.write("\n")
+
+
 for i in range(0, N_NAMES, STEP_SIZE):
     print "processing {} to {} of {}".format(i, i + STEP_SIZE, N_NAMES)
     name_chunk = NAMES[i: i + STEP_SIZE]
@@ -45,13 +60,12 @@ for i in range(0, N_NAMES, STEP_SIZE):
 
     # merge lists to mimic non-chunked example
     results = list(itertools.chain.from_iterable(chunked_results))
+
+    # save current results, just in case
+    save_results('results_{}.txt'.format(i), name_chunk, results)
+
+    # append to running total
     ALL_RESULTS.extend(results)
 
 
-# save results
-with open('results.txt', 'w') as f:
-    f.write("name	cuid	ingred_cuid	ingred\n")
-    for n, m in zip(NAMES, ALL_RESULTS):
-        cuid, ingred_cuid, ingred = m
-        f.write("	".join([str(n), str(cuid), str(ingred_cuid), str(ingred)]))
-        f.write("\n")
+save_results('all_results.txt', NAMES, ALL_RESULTS)
