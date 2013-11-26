@@ -1,91 +1,43 @@
-import requests
-import urllib2
-from xml.etree import ElementTree
-import re
-import jellyfish
-import numpy as np
-
-# REST API of RxNav
 from suds.client import Client
+
 url = "http://rxnav.nlm.nih.gov/RxNormDBService.xml"
 rxnav = Client(url)
 
 
-def approx_uis(drug):
-    """Returns the CUI and AUI of first approximate match in RxNav"""
+def approx_cui(drug):
+    """Returns the CUI of first approximate match in RxNav"""
     result = rxnav.service.getApproximateMatch(drug, 1, 0)
     if len(result.rxMatchInfo) == 0:
-        return None, None  # TODO: return unknown
+        return -1
     r = result.rxMatchInfo[0]
-    return r.RXCUI, r.RXAUI
+    return r.RXCUI
 
 
-def exact_uis(drug, db):
-    """Returns CUI and AUI of first exact match in RxNorm"""
-    cur = db.cursor()
-    n = cur.execute("""select RXCUI, RXAUI from RXNCONSO where STR like "%{}%" limit 1;""".format(drug))
-    if n == 0:
-        cur.close()
-        return None, None
-    result = cur.fetchone()
-    cur.close()
-    rxcui = int(result[0])
-    rxaui = int(result[1])
-    return rxcui, rxaui
+def cui_to_ingredient(cui):
+    """Returns the first ingredient for this CUI"""
+    result = rxnav.service.getRelatedByType(cui, ["IN"])
+    if len(result) == 0:
+        return -1, "UNKNOWN"
+    r = result[0].rxConcept
+    if len(r) == 0:
+        return -1, "UNKNOWN"
+    r = r[0]
+    return r.RXCUI, r.STR
 
 
-def cui_to_canonical(cui, db):
-    """Build a canonical name for this RXCUI"""
-    cur = db.cursor()
-    n = cur.execute("""select STR from RXNCONSO where RXCUI like "{}" and TTY like "PN" limit 1;""".format(cui))
-    if n == 0:
-        cur.close()
-        return None
-    cur.close()
-    return cur.fetchone()
+def map_drug_name(drug):
+    """Returns the RXCUI for the approximate match, the RXCUI of the
+    first ingredient, and the name of the first ingredient.
 
-
-def prefix_match(n, rxn_terms, min_length=5):
-    for i in range(len(n), min_length - 1, -1):
-        prefix = n[:i]
-        if prefix in rxn_terms:
-            return prefix
-    return ""
-
-
-def approx_match(name, rxn_terms, len_limit=2):
-    nchars = len(name)
-    rxn_terms = list(n for n in rxn_terms
-                     if nchars - len_limit <= len(n) <= nchars + len_limit)
-    return min((jellyfish.levenshtein_distance(name, n), n)
-               for n in rxn_terms)
-
-
-def word_to_bigram_vector(word):
-    result = np.zeros((26 * 26,), dtype=np.int)
-    for i in range(len(word) - 1):
-        a = ord(word[i]) - ord('a')
-        b = ord(word[i + 1]) - ord('a')
-        if (0 <= a < 26 and 0 <= b < 26):
-            result[a * 26 + b] += 1
-    return result
-
-
-def match_vectors(word, targets, target_vectors, limit=2):
-    nchars = len(word)
-    targets, target_vectors = zip(*list((t, v)
-                                        for t, v in zip(targets, target_vectors)
-                                        if nchars - limit <= len(t) <= nchars + limit))
-    vec = word_to_bigram_vector(word)
-    idx = min((np.sum(np.abs(vec - v)), idx)
-              for idx, v in enumerate(target_vectors))[1]
-    return targets[idx]
-
-
-def map_drug_name(drug, db):
-    """Returns a precise name for each drug."""
-    # TODO: what if search term matches multiple drugs?
-    pass
+    """
+    try:
+        cui = approx_cui(drug)
+        if cui == -1:
+            return -1, -1, "UNKNOWN"
+        ingred_cui, ingred = cui_to_ingredient(cui)
+        return cui, ingred_cui, ingred
+    except:
+        return -1, -1, "UNKNOWN"
 
 
 def get_faers_drugs(db):
@@ -99,26 +51,3 @@ def get_faers_drugs(db):
     drugs = cur.fetchall()
     cur.close()
     return list(r[0].lower() for r in drugs)
-
-
-def get_rxn_terms(db):
-    cur = db.cursor()
-    cur.execute("select STR from RXNCONSO")
-    matches = cur.fetchall()
-    cur.close()
-    return set(m[0].lower() for m in matches)
-
-
-PATTERN = re.compile("\/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]\/")
-
-
-def clean_name(name):
-    """Some names have a suffix like `/XXXX/`. Remove them.
-
-    Remove extra space.
-
-    """
-    match = PATTERN.search(name)
-    if match is not None:
-        name = name[:match.start()] + name[match.end():]
-    return ' '.join(name.split())
