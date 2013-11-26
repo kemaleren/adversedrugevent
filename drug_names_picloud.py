@@ -10,10 +10,10 @@ from drug_names import map_drug_name
 
 
 # map this many at a time
-CHUNK_SIZE = 10
+CHUNK_SIZE = 30
 
 # picloud has a limit on the number of items that can be mapped
-STEP_SIZE = 1000
+STEP_SIZE = 300
 
 # save all results as they come
 ALL_RESULTS = []
@@ -50,22 +50,25 @@ def save_results(filename, names, results):
 
 
 for i in range(0, N_NAMES, STEP_SIZE):
-    print "processing {} to {} of {}".format(i, i + STEP_SIZE, N_NAMES)
-    name_chunk = NAMES[i: i + STEP_SIZE]
-    jids = cloud.map(function_dechunker(map_drug_name),
-                     chunk_list(name_chunk, CHUNK_SIZE), _type="s1")
+    try:
+        print "processing {} to {} of {}".format(i, i + STEP_SIZE, N_NAMES)
+        name_chunk = NAMES[i: i + STEP_SIZE]
+        jids = cloud.map(function_dechunker(map_drug_name),
+                         chunk_list(name_chunk, CHUNK_SIZE), _type="s1")
 
-    # a list of lists is returned
-    chunked_results = cloud.result(jids)
+        # a list of lists is returned
+        chunked_results = cloud.result(jids)
 
-    # merge lists to mimic non-chunked example
-    results = list(itertools.chain.from_iterable(chunked_results))
+        # merge lists to mimic non-chunked example
+        results = list(itertools.chain.from_iterable(chunked_results))
 
-    # save current results, just in case
-    save_results('results_{}.txt'.format(i), name_chunk, results)
+        # save current results, just in case
+        save_results('results_{}.txt'.format(i), name_chunk, results)
 
-    # append to running total
-    ALL_RESULTS.extend(results)
+        # append to running total
+        ALL_RESULTS.extend(results)
+    except:
+        print "exception occurred. skipping to next chunk."
 
 
 save_results('results_final.txt', NAMES, ALL_RESULTS)
